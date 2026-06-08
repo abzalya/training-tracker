@@ -34,6 +34,21 @@ function weekKey(iso) { // ISO week-ish bucket: year-Wn from plan start
 const state = { tab: "today", date: todayISO(), editing: null };
 let curGym = null, curRun = null; // working objects bound to the open form
 
+// ---------- draft autosave (survives accidental tab switch / app close) ----------
+const DRAFT_KEY = (date) => `tt-draft:${date}`;
+function saveDraft(s) {
+  if (!s) return;
+  // strip non-serializable plan refs before persisting
+  const c = s.type === "gym"
+    ? { ...s, exercises: s.exercises.map((e) => ({ name: e.name, muscles: e.muscles, sets: e.sets, note: e.note })) }
+    : { ...s };
+  try { localStorage.setItem(DRAFT_KEY(s.date), JSON.stringify(c)); } catch {}
+}
+function loadDraft(date) {
+  try { const r = localStorage.getItem(DRAFT_KEY(date)); return r ? JSON.parse(r) : null; } catch { return null; }
+}
+function clearDraft(date) { try { localStorage.removeItem(DRAFT_KEY(date)); } catch {} }
+
 // ---------- root render ----------
 const app = $("#app");
 const tabs = [
@@ -85,14 +100,21 @@ async function renderToday() {
       <input type="date" id="datePick" value="${iso}" class="datepick"/>
     </header>`;
 
-  // pick what to show: an editing session, an existing logged session, or the plan template
+  // pick what to show: editing > saved session > unsaved draft > plan template
   if (editing) return header + (editing.type === "run" ? runForm(editing) : gymForm(editing, await DB.lastGym(editing.key, editing.id)));
-  if (existing) return header + loggedCard(existing);
+  if (existing) { clearDraft(iso); return header + loggedCard(existing); }
+
+  // restore an in-progress draft if one exists for this day
+  const draft = loadDraft(iso);
+  if (draft) {
+    if (draft.type === "run") return header + draftBanner() + runForm(draft);
+    return header + draftBanner() + gymForm(hydrate(draft), await DB.lastGym(draft.key, draft.id));
+  }
 
   // fresh from template
   if (plan.type === "gym") {
     const blank = blankGym(iso, plan);
-    return header + (await gymForm(blank, await DB.lastGym(plan.key)));
+    return header + gymForm(blank, await DB.lastGym(plan.key));
   }
   if (plan.type === "run") return header + runForm(blankRun(iso, plan));
   // rest
@@ -122,8 +144,9 @@ function blankRun(iso, plan) {
   return { id: DB.uid(), date: iso, type: "run", key: plan.key, label: r.label,
            dist: "", dur: "", avgHr: "", maxHr: "", cadence: "", note: "" };
 }
+const draftBanner = () => `<div class="draftbar">● Unsaved draft restored — finish and tap Save<button class="draftdiscard" id="discardDraft">Discard</button></div>`;
 
-async function gymForm(sess, last) {
+function gymForm(sess, last) {
   curGym = sess; // live working reference for input handlers
   const g = GYM[sess.key];
   const warn = g?.warning ? `<div class="warnbox">⚠︎ ${esc(g.warning)}</div>` : "";
@@ -246,6 +269,9 @@ function wireToday() {
     if (confirm("Delete this session?")) { await DB.deleteSession(b.dataset.del); state.editing = null; render(); }
   }));
 
+  const dd = $("#discardDraft");
+  if (dd) dd.addEventListener("click", () => { clearDraft(state.date); state.editing = null; render(); });
+
   const gf = $("#gymForm");
   if (gf) {
     gf.addEventListener("input", (e) => {
@@ -254,34 +280,35 @@ function wireToday() {
         const ex = curGym.exercises[+t.dataset.e]; ex.sets[+t.dataset.s][t.dataset.f] = t.value;
       } else if (t.classList.contains("exnote")) curGym.exercises[+t.dataset.e].note = t.value;
       else if (t.id === "sessNote") curGym.note = t.value;
+      saveDraft(curGym);
     });
     gf.querySelectorAll(".addset").forEach((b) => b.addEventListener("click", (e) => {
-      e.preventDefault(); curGym.exercises[+b.dataset.e].sets.push({ weight: "", reps: "" }); state.editing = curGym; render();
+      e.preventDefault(); curGym.exercises[+b.dataset.e].sets.push({ weight: "", reps: "" }); saveDraft(curGym); state.editing = curGym; render();
     }));
     gf.addEventListener("submit", async (e) => {
       e.preventDefault(); curGym.createdAt = Date.now();
       // strip plan refs before save
       const clean = { ...curGym, exercises: curGym.exercises.map((x) => ({ name: x.name, muscles: x.muscles, sets: x.sets, note: x.note })) };
-      await DB.saveSession(clean); state.editing = null; flash("Session saved ✓"); render();
+      await DB.saveSession(clean); clearDraft(curGym.date); state.editing = null; flash("Session saved ✓"); render();
     });
   }
   const rf = $("#runForm");
   if (rf) {
+    const syncRun = () => Object.assign(curRun, {
+      dist: $("#r_dist").value, dur: $("#r_dur").value, avgHr: $("#r_avg").value,
+      maxHr: $("#r_max").value, cadence: $("#r_cad").value, note: $("#r_note").value,
+    });
     const recompute = () => {
       const dist = parseFloat($("#r_dist").value), sec = parseDur($("#r_dur").value);
       $("#o_pace").textContent = dist > 0 && sec > 0 ? fmtPace(sec / dist) : "—";
       const zone = zoneOf(parseFloat($("#r_avg").value));
       const oz = $("#o_zone"); oz.textContent = zone ? zone.label : "—"; oz.className = zone ? "z" + zone.z : "";
     };
-    rf.addEventListener("input", recompute);
+    rf.addEventListener("input", () => { recompute(); syncRun(); saveDraft(curRun); });
     rf.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const s = curRun;
-      Object.assign(s, {
-        dist: $("#r_dist").value, dur: $("#r_dur").value, avgHr: $("#r_avg").value,
-        maxHr: $("#r_max").value, cadence: $("#r_cad").value, note: $("#r_note").value, createdAt: Date.now(),
-      });
-      await DB.saveSession(s); state.editing = null; flash("Run saved ✓"); render();
+      syncRun(); curRun.createdAt = Date.now();
+      await DB.saveSession(curRun); clearDraft(curRun.date); state.editing = null; flash("Run saved ✓"); render();
     });
   }
 }

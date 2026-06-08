@@ -1,5 +1,5 @@
 // App-shell cache so the app opens and works with zero network mid-workout.
-const CACHE = "training-v1";
+const CACHE = "training-v2";
 const SHELL = [
   "./", "./index.html", "./styles.css",
   "./app.js", "./db.js", "./data.js", "./charts.js",
