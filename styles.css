@@ -15,16 +15,17 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html { height: -webkit-fill-available; }
-html, body { margin: 0; width: 100%; overflow-x: hidden; }
+html, body { margin: 0; height: 100%; width: 100%; overflow: hidden; }
 body {
   background: var(--bg); color: var(--text);
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
-  min-height: 100vh; min-height: -webkit-fill-available; min-height: 100dvh;
 }
-/* Height chain: vh fallback → fill-available for pre-dvh iOS → dvh wins on iOS 15.4+ (13 Pro Max), which sizes correctly around the home indicator */
-#app { display: flex; flex-direction: column; height: 100vh; height: -webkit-fill-available; height: 100dvh; }
+/* Pin to the physical screen edges instead of using vh/dvh units, which leave a
+   home-indicator-sized gap at the bottom in iOS standalone mode. fixed inset:0
+   covers the full screen edge-to-edge; the tab bar's safe-area padding keeps
+   controls above the home indicator. */
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; }
 h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
