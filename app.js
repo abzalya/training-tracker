@@ -501,7 +501,26 @@ function flash(msg) {
   clearTimeout(flashTimer); flashTimer = setTimeout(() => el.classList.remove("show"), 1800);
 }
 
-// service worker
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
+// Service worker + auto-update.
+// Checks for a new version every time the app comes to the foreground (covers iOS
+// resume-from-snapshot), and reloads once when the new version takes control — so
+// updates land without force-quitting. Drafts persist, so a background reload is free.
+if ("serviceWorker" in navigator) {
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;
+    const a = document.activeElement;
+    // don't yank the keyboard away mid-entry — the update applies on the next launch instead
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA")) return;
+    reloading = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register("./sw.js").then((reg) => {
+    reg.update();
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") reg.update();
+    });
+  }).catch(() => {});
+}
 
 render();
