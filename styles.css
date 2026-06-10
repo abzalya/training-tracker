@@ -40,7 +40,7 @@ h3 { font-size: 16px; font-weight: 600; margin: 0; }
   max-width: 560px; width: 100%; margin: 0 auto;
 }
 .tabbar {
-  flex: 0 0 auto; display: flex; padding-bottom: var(--safe-bot);
+  flex: 0 0 auto; display: flex; padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--bg-elev) 86%, transparent);
   backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-top: .5px solid var(--hair); z-index: 50;
